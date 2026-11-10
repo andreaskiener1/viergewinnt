@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vier gewinnt</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one centered play column — header, status strip, board on a stand, controls below */
+:root {
+  --bg: #eef0f3;
+  --fg: #1c2230;
+  --muted: #5b6475;
+  --board: #2b3346;
+  --board-edge: #1d2333;
+  --hole: #eef0f3;
+  --red: #e0383e;
+  --red-dark: #a8232a;
+  --blue: #2f6fe0;
+  --blue-dark: #1d4ba6;
+  --line: #d3d8e0;
+  --surface: #ffffff;
+  --win: #ffd23f;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151c; --fg: #e8ebf1; --muted: #9aa3b4; --board: #2a3248; --board-edge: #0b0e14;
+    --hole: #12151c; --line: #2b3242; --surface: #1a1f2a; --red: #f0484e; --blue: #4a86f0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151c; --fg: #e8ebf1; --muted: #9aa3b4; --board: #2a3248; --board-edge: #0b0e14;
+  --hole: #12151c; --line: #2b3242; --surface: #1a1f2a; --red: #f0484e; --blue: #4a86f0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 40px;
+}
+.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(30px, 7vw, 42px); margin: 0; letter-spacing: -0.02em; line-height: 1; }
+h1 .four { color: var(--red); }
+.score { display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--muted); font-size: 14px; }
+.score span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.dot.red { background: var(--red); } .dot.blue { background: var(--blue); }
+
+.status {
+  display: flex; align-items: center; gap: 10px; min-height: 46px;
+  padding: 10px 14px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line);
+  font-weight: 500;
+}
+.status .chip { width: 22px; height: 22px; border-radius: 50%; flex: none; box-shadow: inset 0 -3px 0 rgba(0,0,0,.22); }
+.status strong { font-weight: 600; }
+
+/* Start screen */
+.start { display: flex; flex-direction: column; gap: 14px; padding: 22px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.start h2 { font-family: var(--font-display); font-weight: 600; font-size: 20px; margin: 0; }
+.start p { margin: 0; color: var(--muted); line-height: 1.5; }
+.pick { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pick button {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font: 600 16px var(--font-body); color: #fff; border: 0; border-radius: 12px; padding: 16px 12px; cursor: pointer;
+  transition: transform .12s ease, filter .12s ease;
+}
+.pick button .chip { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.25); box-shadow: inset 0 -3px 0 rgba(0,0,0,.2); }
+.pick .red { background: var(--red); box-shadow: 0 4px 0 var(--red-dark); }
+.pick .blue { background: var(--blue); box-shadow: 0 4px 0 var(--blue-dark); }
+.pick button:hover { filter: brightness(1.07); transform: translateY(-1px); }
+.pick button:active { transform: translateY(3px); box-shadow: none; }
+
+/* Board */
+.board-area { display: flex; flex-direction: column; align-items: stretch; }
+.board {
+  --cols: 7; --gap: 2.2%;
+  background: var(--board); border-radius: 16px; padding: 3%;
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--gap);
+  box-shadow: 0 8px 0 var(--board-edge), 0 18px 30px rgba(10,15,30,.25);
+  position: relative; user-select: none; touch-action: manipulation;
+}
+.cell {
+  aspect-ratio: 1; border-radius: 50%; background: var(--hole); position: relative; overflow: hidden;
+  box-shadow: inset 0 4px 6px rgba(0,0,0,.35); border: 0; padding: 0; cursor: pointer;
+}
+.cell:focus-visible { outline: 3px solid var(--win); outline-offset: 2px; }
+.cell.full, .board.over .cell { cursor: default; }
+.board.locked .cell { cursor: wait; }
+.piece {
+  position: absolute; inset: 0; border-radius: 50%;
+  box-shadow: inset 0 -5px 0 rgba(0,0,0,.22), inset 0 3px 0 rgba(255,255,255,.18);
+}
+.piece::after { content: ""; position: absolute; inset: 22%; border-radius: 50%; border: 2px solid rgba(0,0,0,.14); }
+.piece.red { background: var(--red); } .piece.blue { background: var(--blue); }
+.piece.ghost { opacity: .32; }
+.piece.drop { animation: drop var(--dur, 380ms) cubic-bezier(.45,0,.75,1.2) both; }
+@keyframes drop { from { transform: translateY(var(--from, -600%)); } to { transform: translateY(0); } }
+.cell.win .piece { animation: pulse 900ms ease-in-out infinite alternate; }
+.cell.win .piece::after { border-color: var(--win); border-width: 4px; }
+@keyframes pulse { from { filter: brightness(1); } to { filter: brightness(1.25); } }
+.stand { height: 14px; margin: 8px 6% 0; border-radius: 0 0 10px 10px; background: var(--board-edge); opacity: .55; }
+
+.controls { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn {
+  font: 600 14px var(--font-body); padding: 10px 16px; border-radius: 10px; cursor: pointer;
+  background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+}
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible, .pick button:focus-visible { outline: 3px solid var(--win); outline-offset: 2px; }
+.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .piece.drop, .cell.win .piece { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Vier <span class="four">gewinnt</span></h1>
+    <div class="score" aria-label="Spielstand">
+      <span><i class="dot red"></i>Rot <b id="scoreRed">0</b></span>
+      <span><i class="dot blue"></i>Blau <b id="scoreBlue">0</b></span>
+    </div>
+  </header>
+
+  <section class="start" id="start">
+    <h2>Wer beginnt?</h2>
+    <p>Wähle die Farbe, die den ersten Stein setzt. Danach wird abwechselnd gespielt, bis jemand vier Steine in einer Reihe hat – waagrecht, senkrecht oder diagonal.</p>
+    <div class="pick">
+      <button type="button" class="red" id="startRed"><i class="chip"></i>Rot beginnt</button>
+      <button type="button" class="blue" id="startBlue"><i class="chip"></i>Blau beginnt</button>
+    </div>
+  </section>
+
+  <div class="status" id="status" hidden>
+    <i class="chip" id="statusChip"></i>
+    <span id="statusText"></span>
+  </div>
+
+  <div class="board-area">
+    <div class="board" id="board" role="grid" aria-label="Spielfeld, 7 Spalten und 6 Reihen"></div>
+    <div class="stand"></div>
+  </div>
+
+  <div class="controls" id="controls" hidden>
+    <button type="button" class="btn primary" id="again">Neue Runde</button>
+    <button type="button" class="btn" id="undo">Zug zurück</button>
+    <button type="button" class="btn" id="reset">Startfarbe neu wählen</button>
+  </div>
+  <p class="hint">Klicke auf ein freies Feld. Der Stein fällt in dieser Spalte bis zum untersten freien Platz.</p>
+</div>
+
+<script>
+(() => {
+  const ROWS = 6, COLS = 7;
+  const NAMES = { red: "Rot", blue: "Blau" };
+  const boardEl = document.getElementById("board");
+  const startEl = document.getElementById("start");
+  const statusEl = document.getElementById("status");
+  const statusChip = document.getElementById("statusChip");
+  const statusText = document.getElementById("statusText");
+  const controls = document.getElementById("controls");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let grid, current, starter = null, over = true, locked = false, history = [];
+  const score = { red: 0, blue: 0 };
+  const cells = [];
+
+  // Build the 6x7 cells once
+  for (let r = 0; r < ROWS; r++) {
+    cells[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cell";
+      b.dataset.r = r; b.dataset.c = c;
+      b.setAttribute("aria-label", `Spalte ${c + 1}, Reihe ${ROWS - r}`);
+      b.addEventListener("click", () => play(c));
+      b.addEventListener("mouseenter", () => showGhost(c));
+      b.addEventListener("focus", () => showGhost(c));
+      boardEl.appendChild(b);
+      cells[r][c] = b;
+    }
+  }
+  boardEl.addEventListener("mouseleave", clearGhost);
+
+  function emptyGrid() { return Array.from({ length: ROWS }, () => Array(COLS).fill(null)); }
+  function lowestFree(c) { for (let r = ROWS - 1; r >= 0; r--) if (!grid[r][c]) return r; return -1; }
+
+  function render() {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      const cell = cells[r][c];
+      cell.classList.remove("win");
+      cell.classList.toggle("full", !!grid[r][c]);
+      const p = cell.querySelector(".piece:not(.ghost)");
+      if (grid[r][c] && !p) {
+        const el = document.createElement("i");
+        el.className = "piece " + grid[r][c];
+        cell.appendChild(el);
+      } else if (!grid[r][c] && p) p.remove();
+    }
+    boardEl.classList.toggle("over", over);
+  }
+
+  function setStatus(color, html) {
+    statusEl.hidden = false;
+    statusChip.style.background = color ? `var(--${color})` : "var(--line)";
+    statusText.innerHTML = html;
+  }
+
+  function startGame(first) {
+    starter = first;
+    grid = emptyGrid();
+    current = first; over = false; locked = false; history = [];
+    boardEl.querySelectorAll(".piece").forEach(p => p.remove());
+    render();
+    startEl.hidden = true; controls.hidden = false;
+    setStatus(current, `<strong>${NAMES[current]}</strong> ist am Zug`);
+  }
+
+  function showGhost(c) {
+    clearGhost();
+    if (over || locked) return;
+    const r = lowestFree(c);
+    if (r < 0) return;
+    const g = document.createElement("i");
+    g.className = `piece ghost ${current}`;
+    cells[r][c].appendChild(g);
+  }
+  function clearGhost() { boardEl.querySelectorAll(".piece.ghost").forEach(g => g.remove()); }
+
+  function play(c) {
+    if (over || locked) return;
+    const r = lowestFree(c);
+    if (r < 0) return;
+    clearGhost();
+    grid[r][c] = current;
+    history.push({ r, c });
+    const piece = document.createElement("i");
+    piece.className = `piece ${current}`;
+    if (!reduceMotion) {
+      piece.classList.add("drop");
+      piece.style.setProperty("--from", `${-(r + 1) * 112}%`);
+      piece.style.setProperty("--dur", `${220 + r * 45}ms`);
+    }
+    cells[r][c].appendChild(piece);
+    cells[r][c].classList.add("full");
+
+    const line = findWin(r, c, current);
+    if (line) {
+      over = true;
+      score[current]++;
+      updateScore();
+      line.forEach(([wr, wc]) => cells[wr][wc].classList.add("win"));
+      boardEl.classList.add("over");
+      setStatus(current, `<strong>${NAMES[current]}</strong> gewinnt mit vier in einer Reihe!`);
+      return;
+    }
+    if (history.length === ROWS * COLS) {
+      over = true;
+      boardEl.classList.add("over");
+      setStatus(null, "<strong>Unentschieden</strong> – das Spielfeld ist voll.");
+      return;
+    }
+    current = current === "red" ? "blue" : "red";
+    setStatus(current, `<strong>${NAMES[current]}</strong> ist am Zug`);
+    // brief lock so the drop animation finishes before the next click
+    if (!reduceMotion) {
+      locked = true; boardEl.classList.add("locked");
+      setTimeout(() => { locked = false; boardEl.classList.remove("locked"); }, 220 + r * 45);
+    }
+  }
+
+  function findWin(r, c, color) {
+    const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    for (const [dr, dc] of dirs) {
+      const line = [[r, c]];
+      for (const s of [1, -1]) {
+        let rr = r + dr * s, cc = c + dc * s;
+        while (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS && grid[rr][cc] === color) {
+          line.push([rr, cc]); rr += dr * s; cc += dc * s;
+        }
+      }
+      if (line.length >= 4) return line;
+    }
+    return null;
+  }
+
+  function undo() {
+    if (!history.length || locked) return;
+    const last = history.pop();
+    const color = grid[last.r][last.c];
+    if (over && findWin(last.r, last.c, color)) { score[color]--; updateScore(); }
+    grid[last.r][last.c] = null;
+    current = color; over = false;
+    render();
+    setStatus(current, `<strong>${NAMES[current]}</strong> ist am Zug`);
+  }
+
+  function updateScore() {
+    document.getElementById("scoreRed").textContent = score.red;
+    document.getElementById("scoreBlue").textContent = score.blue;
+  }
+
+  document.getElementById("startRed").addEventListener("click", () => startGame("red"));
+  document.getElementById("startBlue").addEventListener("click", () => startGame("blue"));
+  document.getElementById("again").addEventListener("click", () => {
+    // next round: the other colour starts
+    startGame(starter === "red" ? "blue" : "red");
+  });
+  document.getElementById("undo").addEventListener("click", undo);
+  document.getElementById("reset").addEventListener("click", () => {
+    over = true; grid = emptyGrid(); history = [];
+    boardEl.querySelectorAll(".piece").forEach(p => p.remove());
+    render();
+    startEl.hidden = false; controls.hidden = true; statusEl.hidden = true;
+  });
+
+  grid = emptyGrid();
+  render();
+})();
+</script>
+</body>
+</html>
